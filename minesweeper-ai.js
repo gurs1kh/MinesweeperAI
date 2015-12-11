@@ -95,7 +95,11 @@ function chooseTile(tile) {
 
 //places a flag on the selected tile
 function placeFlag(tile) {
-	simulateClick(tile.div, 2);
+	if (!tile.div.classList.contains("bombflagged")) {
+		simulateClick(tile.div, 2);
+		return true;
+	}
+	return false;
 }
 
 //retrieves the current state of the game board.
@@ -128,15 +132,18 @@ function getTiles() {
 
 //solves the game
 function solveGame() {
+	var move = 0;
 	if (isGameWon() || isGameOver())
 		newGame();
 	if (getTiles().length == getBlankTiles().length) 
 		pickRandomTile();
 	while (!isGameWon() && !isGameOver()) {
-		console.log(isGameOver(), isGameWon());
-		if (!clearObviousTiles())
-			if (!chooseMostLikelyTile())
-				pickRandomTile();
+		var strategies = [clearObviousTiles, flag12, clear11, chooseSafestTile, pickRandomTile];
+		for (var i = 0; i < strategies.length; i++) {
+			var changed = strategies[i]();
+			if (changed) i = strategies.length;
+		}
+		console.log(++move);
 	}
 }
 
@@ -144,10 +151,12 @@ function solveGame() {
 function pickRandomTile() {
 	var tiles = getBlankTiles();
 	chooseTile(tiles[Math.ceil(Math.random() * tiles.length)]);
+	console.log("pickRandomTile");
 }
 
 //returns all neighbors of the provided tile
-function getNeighbors(board, tile) {
+function getNeighbors(tile, board) {
+	if (!board) board = getBoard();
 	var neighbors = [];
 	for (var i = tile.x - 1 || tile.x; i <= ((tile.x + 1 < board.length) ? tile.x + 1 : tile.x); i++) {
 		for (var j = tile.y - 1 || tile.y; j <= ((tile.y + 1 < board[i].length) ? tile.y + 1 : tile.y); j++) {
@@ -159,18 +168,21 @@ function getNeighbors(board, tile) {
 }
 
 //returns all blank neighbors of the provided tile
-function getBlankNeighbors(board, tile) {
-	return getNeighbors(board, tile).filter(function(d) { return d.value < 0 && !d.flag; });
+function getBlankNeighbors(tile, board) {
+	if (!board) board = getBoard();
+	return getNeighbors(tile, board).filter(function(d) { return d.value < 0 && !d.flag; });
 }
 
 //returns all flagged neighbors of the provided tile
-function getFlagNeighbors(board, tile) {
-	return getNeighbors(board, tile).filter(function(d) { return d.flag; });
+function getFlagNeighbors(tile, board) {
+	if (!board) board = getBoard();
+	return getNeighbors(tile, board).filter(function(d) { return d.flag; });
 }
 
 //returns all numbered neighbors of the provided tile
-function getNumberedNeighbors(board, tile) {
-	return getNeighbors(board, tile).filter(function(d) { return d.value >= 0 && !d.flag; });
+function getNumberedNeighbors(tile, board) {
+	if (!board) board = getBoard();
+	return getNeighbors(tile, board).filter(function(d) { return d.value >= 0 && !d.flag; });
 }
 
 //returns all of the available tiles
@@ -183,6 +195,12 @@ function getNumberedTiles(board) {
 	return getTiles(board).filter(function(d) { return d.value > 0; });
 }
 
+function getValue(tile, board) {
+	if (!board) board = getBoard();
+	return tile.value - getFlagNeighbors(tile, board).length;
+}
+
+
 //attempts to solve the game as much as possible before probability is used
 //returns true if any changes were made to the game
 function clearObviousTiles() {
@@ -191,9 +209,8 @@ function clearObviousTiles() {
 	var numbered = getNumberedTiles(board).sort(function(a, b) { return a.value - b.value; });
 	for (var i = 0; i < numbered.length; i++) {
 		board = getBoard();
-		var blanks = getBlankNeighbors(board, numbered[i]);
-		var flags = getFlagNeighbors(board, numbered[i]);
-		var value = numbered[i].value - flags.length;
+		var blanks = getBlankNeighbors(numbered[i], board);
+		var value = getValue(numbered[i], board);
 		if (value == 0) {
 			for (var j = 0; j < blanks.length; j++) {
 				changed = true;
@@ -201,12 +218,131 @@ function clearObviousTiles() {
 			}
 		} else if (value == blanks.length) {
 			for (var j = 0; j < blanks.length; j++) {
-				changed = true;
-				placeFlag(blanks[j]);
+				if (placeFlag(blanks[j])) 
+					changed = true;
 			}
 		}
 	}
+	if (changed) console.log("clearObviousTiles");
 	return changed;
+}
+
+//implementation of the flagging of 1-2-n strategy
+function flag12() {
+	var changed = false;
+	var board1 = getBoard();
+	var boards = [board1, rotateBoard(board1)];
+	boards.forEach(function(board) {
+		for (var i = 1; i < board.length; i++) {
+			var rowString = board[i].slice(1).map(function(d) {
+				var value = getValue(d);
+				return value < 0 ? "x" : value;
+			}).reduce(function(a, b){
+				return a + "" + b
+			});
+			rowString = "x" + rowString + "x";
+			var start = 1;
+			while (start > 0) {
+				var j = rowString.indexOf("12", start);
+				if (j != -1 && j != rowString.indexOf("12x", start)) {
+					var blanks1 = getBlankNeighbors(board[i][j]);
+					var blanks2 = getBlankNeighbors(board[i][j + 1]);
+					var unique = getUniqueArray(blanks2, blanks1);
+					if (unique.length == 1 && placeFlag(unique[0]))
+						changed = true;
+				}
+				start = j + 1;
+			}
+			var start = 1;
+			while (start > 0) {
+				var j = rowString.indexOf("21", start);
+				if (j != -1 && j - 1 != rowString.indexOf("x21", start - 1)) {
+					var blanks1 = getBlankNeighbors(board[i][j]);
+					var blanks2 = getBlankNeighbors(board[i][j + 1]);
+					var unique = getUniqueArray(blanks1, blanks2);
+					if (unique.length == 1 && placeFlag(unique[0]))
+						changed = true;
+				}
+				start = j + 1;
+			}
+		}
+	});
+	if (changed) console.log("flag12");
+	return changed;
+}
+
+//implementation of the clearing of 1-1-n strategy
+function clear11() {
+	var changed = false;
+	var board1 = getBoard();
+	var boards = [board1, rotateBoard(board1)];
+	boards.forEach(function(board) {
+		boardString = board.map(function(row) {
+			var rowString = row.slice(1).map(function(d) {
+				var value = getValue(d);
+				return value < 0 ? "x" : value;
+			}).reduce(function(a, b){
+				return a + "" + b
+			});
+			return "0" + rowString + "0";
+		});
+		boardString[0] = "";
+		boardString[boardString.length] = "";
+		for (var i = 1; i < boardString.length; i++) {
+			rowString = boardString[i];
+			var start = 1;
+			while (start > 0) {
+				var j = rowString.indexOf("11", start);
+				if (j != -1 && j != rowString.indexOf("11x", start) 
+						&& j - 1 != rowString.indexOf("x11", start)) {
+					var pattern = patternChecker11(boardString, i, j);
+					if (pattern) {
+						var blanks = [getBlankNeighbors(board[i][j]),
+									  getBlankNeighbors(board[i][j + 1])];
+						var unique = getUniqueArray(blanks[(pattern) % 2], blanks[(pattern + 1) % 2]);
+						if (unique.length == 1) {
+							chooseTile(unique[0]);
+							changed = true;
+						}
+					}
+				}
+				start = j + 1;
+			}
+		}
+	});
+	if (changed) console.log("clear11");
+	return changed;
+}
+
+//
+function patternChecker11(boardString, i, j) {
+	if ((boardString[i - 1].charAt(j - 1) != "x" && boardString[i + 1].charAt(j - 1) != "x"))
+		return 1;
+	if ((boardString[i - 1].charAt(j + 2) != "x" && boardString[i + 1].charAt(j + 2) != "x"))
+		return 2;
+	return 0;
+}
+
+function getUniqueArray(a, b) {
+	return a.filter(function(d) {
+		return b.map(function(d2) {
+			return d2.div;
+		}).indexOf(d.div) == -1
+	});
+}
+
+//
+function rotateBoard(board) {
+	var newBoard = new Array();
+	for (var j = 1; j < board[1].length; j++) {
+		newBoard[j] = new Array();
+	}
+	for (var i = 1; i < board.length; i++) {
+		for (var j = 1; j < board[i].length; j++) {
+			newBoard[j][i] = board[i][j];
+		}
+	}
+	return newBoard;
 }
 
 //returns true if the provided tiles are neighbors
@@ -283,9 +419,8 @@ function getSmallestBorderTileRegion(board) {
 function isValidBoard(board) {
 	var numbered = getNumberedTiles(board);
 	for (var i = 0; i < numbered.length; i++) {
-		var blanks = getBlankNeighbors(board, numbered[i]);
-		var flags = getFlagNeighbors(board, numbered[i]);
-		var value = numbered[i].value - flags.length;
+		var blanks = getBlankNeighbors(numbered[i], board);
+		var value = getValue(numbered[i], board);
 		if (value < 0) {
 			return false;
 		}
@@ -339,7 +474,7 @@ var combine = function(a, min) {
 }
 
 //selects the border tile (from the smallest region) most likely not to contain a mine
-function chooseMostLikelyTile() {
+function chooseSafestTile() {
 	var changed = false;
 	var borderTiles = getSmallestBorderTileRegion();
 	var possibleBoards = getPossibleBoards();
@@ -360,6 +495,7 @@ function chooseMostLikelyTile() {
 	aTiles.sort(function(a,b) { return a.aValue - b.aValue; });
 	if (aTiles[0]) changed = true;
 	chooseTile(aTiles[0]);
+	if (changed) console.log("chooseSafestTile");
 	return changed;
 }
 
