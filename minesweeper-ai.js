@@ -233,37 +233,24 @@ function flag12() {
 	var board1 = getBoard();
 	var boards = [board1, rotateBoard(board1)];
 	boards.forEach(function(board) {
-		for (var i = 1; i < board.length; i++) {
-			var rowString = board[i].slice(1).map(function(d) {
-				var value = getValue(d);
-				return value < 0 ? "x" : value;
-			}).reduce(function(a, b){
-				return a + "" + b
-			});
-			rowString = "x" + rowString + "x";
-			var start = 1;
-			while (start > 0) {
-				var j = rowString.indexOf("12", start);
-				if (j != -1 && j != rowString.indexOf("12x", start)) {
-					var blanks1 = getBlankNeighbors(board[i][j]);
-					var blanks2 = getBlankNeighbors(board[i][j + 1]);
-					var unique = getUniqueArray(blanks2, blanks1);
-					if (unique.length == 1 && placeFlag(unique[0]))
-						changed = true;
+		var boardString = getBoard(board, "x");
+		for (var i = 1; i < boardString.length; i++) {
+			var rowString = boardString[i];
+			var pattern = ["12", "21"];
+			var noMatch = ["12x", "x21"];
+			for (var k = 0; k < 2; k++) {
+				var start = 1;
+				while (start > 0) {
+					var j = rowString.indexOf(pattern[k], start);
+					if (j != -1 && j - k != rowString.indexOf(noMatch[k], start - k)) {
+						var blanks = [getBlankNeighbors(board[i][j]),
+									  getBlankNeighbors(board[i][j + 1])];
+						var unique = getUniqueArray(blanks[(k + 1) % 2], blanks[k % 2]);
+						if (unique.length == 1 && placeFlag(unique[0]))
+							changed = true;
+					}
+					start = j + 1;
 				}
-				start = j + 1;
-			}
-			var start = 1;
-			while (start > 0) {
-				var j = rowString.indexOf("21", start);
-				if (j != -1 && j - 1 != rowString.indexOf("x21", start - 1)) {
-					var blanks1 = getBlankNeighbors(board[i][j]);
-					var blanks2 = getBlankNeighbors(board[i][j + 1]);
-					var unique = getUniqueArray(blanks1, blanks2);
-					if (unique.length == 1 && placeFlag(unique[0]))
-						changed = true;
-				}
-				start = j + 1;
 			}
 		}
 	});
@@ -277,17 +264,7 @@ function clear11() {
 	var board1 = getBoard();
 	var boards = [board1, rotateBoard(board1)];
 	boards.forEach(function(board) {
-		boardString = board.map(function(row) {
-			var rowString = row.slice(1).map(function(d) {
-				var value = getValue(d);
-				return value < 0 ? "x" : value;
-			}).reduce(function(a, b){
-				return a + "" + b
-			});
-			return "0" + rowString + "0";
-		});
-		boardString[0] = "";
-		boardString[boardString.length] = "";
+		var boardString = getBoardString(board, "0");
 		for (var i = 1; i < boardString.length; i++) {
 			rowString = boardString[i];
 			var start = 1;
@@ -314,7 +291,7 @@ function clear11() {
 	return changed;
 }
 
-//
+//finds the right pattern needed for the 1-1-n strategy
 function patternChecker11(boardString, i, j) {
 	if ((boardString[i - 1].charAt(j - 1) != "x" && boardString[i + 1].charAt(j - 1) != "x"))
 		return 1;
@@ -323,6 +300,7 @@ function patternChecker11(boardString, i, j) {
 	return 0;
 }
 
+//returns an array of elements in a that are not in b
 function getUniqueArray(a, b) {
 	return a.filter(function(d) {
 		return b.map(function(d2) {
@@ -331,7 +309,7 @@ function getUniqueArray(a, b) {
 	});
 }
 
-//
+//rotates the board 90 degrees
 function rotateBoard(board) {
 	var newBoard = new Array();
 	for (var j = 1; j < board[1].length; j++) {
@@ -343,6 +321,24 @@ function rotateBoard(board) {
 		}
 	}
 	return newBoard;
+}
+
+function getBoardString(board, padding) {
+	if (!board) board = getBoard();
+	if (!padding) padding = "x";
+	var boardString = board.map(function(row) {
+		var rowString = row.slice(1).map(function(d) {
+			var value = getValue(d);
+			if (d.flag) value = 0;
+			return value < 0 ? "x" : value;
+		}).reduce(function(a, b){
+			return a + "" + b
+		});
+		return padding + rowString + padding;
+	});
+	boardString[0] = "";
+	boardString[boardString.length] = "";
+	return boardString;
 }
 
 //returns true if the provided tiles are neighbors
