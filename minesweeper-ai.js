@@ -81,12 +81,12 @@ function solveGame() {
 	if (getTiles().length == getBlankTiles().length) 
 		pickRandomTile();
 	while (!isGameWon() && !isGameOver()) {
+		console.log("move", ++move);
 		var strategies = [clearObviousTiles, flag12, clear11, chooseSafestTile, pickRandomTile];
 		for (var i = 0; i < strategies.length; i++) {
 			var changed = strategies[i]();
 			if (changed) i = strategies.length;
 		}
-		console.log(++move);
 	}
 }
 
