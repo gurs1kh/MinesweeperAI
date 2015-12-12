@@ -4,7 +4,7 @@ TCSS 435: AI
 Final Project
 */
 
-//this function's code was taken (and modified) from:
+//this code was taken (and modified) from:
 //http://stackoverflow.com/questions/6157929/how-to-simulate-a-mouse-click-using-javascript
 function simulate(element, eventName, button) {
 	function extend(destination, source) {
@@ -73,6 +73,23 @@ function setup() {
 	$('#solve-link').on("click", solveGame);
 }
 
+//solves the game
+function solveGame() {
+	var move = 0;
+	if (isGameWon() || isGameOver())
+		newGame();
+	if (getTiles().length == getBlankTiles().length) 
+		pickRandomTile();
+	while (!isGameWon() && !isGameOver()) {
+		var strategies = [clearObviousTiles, flag12, clear11, chooseSafestTile, pickRandomTile];
+		for (var i = 0; i < strategies.length; i++) {
+			var changed = strategies[i]();
+			if (changed) i = strategies.length;
+		}
+		console.log(++move);
+	}
+}
+
 //returns whether or not the game is over
 function isGameOver() {
 	return $(".facedead")[0] != undefined;
@@ -125,32 +142,28 @@ function getBoard() {
 }
 
 //returns all of tiles on the game board
-function getTiles() {
-	return getBoard().reduce(function(a, b) { return a.concat(b); })
-					 .filter(function(d) { return d; });
+function getTiles(board) {
+	if (!board) board = getBoard();
+	return board.slice(1).reduce(function(a, b) { return a.concat(b); })
+				.filter(function(d) { return d; });
 }
 
-//solves the game
-function solveGame() {
-	var move = 0;
-	if (isGameWon() || isGameOver())
-		newGame();
-	if (getTiles().length == getBlankTiles().length) 
-		pickRandomTile();
-	while (!isGameWon() && !isGameOver()) {
-		var strategies = [clearObviousTiles, flag12, clear11, chooseSafestTile, pickRandomTile];
-		for (var i = 0; i < strategies.length; i++) {
-			var changed = strategies[i]();
-			if (changed) i = strategies.length;
-		}
-		console.log(++move);
-	}
+//returns all of the available tiles
+function getBlankTiles(board) {
+	if (!board) board = getBoard();
+	return getTiles(board).filter(function(d) { return d.value < 0 && !d.flag; });
+}
+
+//returns all of the numbered tiles
+function getNumberedTiles(board) {
+	if (!board) board = getBoard();
+	return getTiles(board).filter(function(d) { return d.value > 0; });
 }
 
 //picks a random tile
 function pickRandomTile() {
 	var tiles = getBlankTiles();
-	chooseTile(tiles[Math.ceil(Math.random() * tiles.length)]);
+	chooseTile(tiles[Math.floor(Math.random() * tiles.length)]);
 	console.log("pickRandomTile");
 }
 
@@ -185,21 +198,11 @@ function getNumberedNeighbors(tile, board) {
 	return getNeighbors(tile, board).filter(function(d) { return d.value >= 0 && !d.flag; });
 }
 
-//returns all of the available tiles
-function getBlankTiles() {
-	return getTiles().filter(function(d) { return d.value < 0 && !d.flag; });
-}
-
-//returns all of the numbered tiles
-function getNumberedTiles(board) {
-	return getTiles(board).filter(function(d) { return d.value > 0; });
-}
-
+//returns the actual value of a tile (the tile value - number of bordering flags)
 function getValue(tile, board) {
 	if (!board) board = getBoard();
 	return tile.value - getFlagNeighbors(tile, board).length;
 }
-
 
 //attempts to solve the game as much as possible before probability is used
 //returns true if any changes were made to the game
@@ -228,17 +231,18 @@ function clearObviousTiles() {
 }
 
 //implementation of the flagging of 1-2-n strategy
+//returns true if any changes were made to the game
 function flag12() {
 	var changed = false;
 	var board1 = getBoard();
 	var boards = [board1, rotateBoard(board1)];
 	boards.forEach(function(board) {
-		var boardString = getBoard(board, "x");
+		var boardString = getBoardString(board, "x");
 		for (var i = 1; i < boardString.length; i++) {
 			var rowString = boardString[i];
 			var pattern = ["12", "21"];
 			var noMatch = ["12x", "x21"];
-			for (var k = 0; k < 2; k++) {
+			for (var k = 0; k < pattern.length; k++) {
 				var start = 1;
 				while (start > 0) {
 					var j = rowString.indexOf(pattern[k], start);
@@ -259,6 +263,7 @@ function flag12() {
 }
 
 //implementation of the clearing of 1-1-n strategy
+//returns true if any changes were made to the game
 function clear11() {
 	var changed = false;
 	var board1 = getBoard();
@@ -323,6 +328,7 @@ function rotateBoard(board) {
 	return newBoard;
 }
 
+//returns the board as a string (using "x" for negative values)
 function getBoardString(board, padding) {
 	if (!board) board = getBoard();
 	if (!padding) padding = "x";
@@ -430,7 +436,7 @@ function getPossibleBoards(board, borderTiles) {
 	if (!borderTiles) borderTiles = getSmallestBorderTileRegion(board);
 	if (borderTiles && borderTiles.length > 10) borderTiles.splice(9);
 	var possibleBoards = new Array();
-	var a;
+	var a = new Array();
 	if (borderTiles && borderTiles.length > 0) {
 		a = combine(borderTiles, 1);
 		a.sort(function(a, b) { return b.length - a.length });
@@ -448,7 +454,7 @@ function getPossibleBoards(board, borderTiles) {
 
 //returns all possible permutations of the elements in an array (with min number of values for the permutations)
 //code taken from http://stackoverflow.com/questions/5752002/find-all-possible-subset-combos-in-an-array
-var combine = function(a, min) {
+function combine(a, min) {
     var fn = function(n, src, got, all) {
         if (n == 0) {
             if (got.length > 0) {
@@ -470,29 +476,32 @@ var combine = function(a, min) {
 }
 
 //selects the border tile (from the smallest region) most likely not to contain a mine
+//returns true if any changes were made to the game
 function chooseSafestTile() {
 	var changed = false;
 	var borderTiles = getSmallestBorderTileRegion();
-	var possibleBoards = getPossibleBoards();
-	var board = getBoard();
-	for (var i = 0; i < borderTiles.length; i++) {
-		var tile = borderTiles[i];
-		tile.aValue = 0;
-		board[tile.x][tile.y].aValue = 0;
-		for (var j = 0; j < possibleBoards.length; j++) {
-			if (possibleBoards[j][tile.x][tile.y].flag) {
-				tile.aValue++;
-				board[tile.x][tile.y].aValue++;
+	if (borderTiles && borderTiles.length > 0) {
+		var possibleBoards = getPossibleBoards();
+		var board = getBoard();
+		for (var i = 0; i < borderTiles.length; i++) {
+			var tile = borderTiles[i];
+			tile.aValue = 0;
+			board[tile.x][tile.y].aValue = 0;
+			for (var j = 0; j < possibleBoards.length; j++) {
+				if (possibleBoards[j][tile.x][tile.y].flag) {
+					tile.aValue++;
+					board[tile.x][tile.y].aValue++;
+				}
 			}
 		}
+		var aTiles = board.reduce(function(a, b) { return a.concat(b); })
+						  .filter(function(d) { return d.aValue; });
+		aTiles.sort(function(a,b) { return a.aValue - b.aValue; });
+		if (aTiles[0]) changed = true;
+		chooseTile(aTiles[0]);
+		if (changed) console.log("chooseSafestTile");
+		return changed;
 	}
-	var aTiles = board.reduce(function(a, b) { return a.concat(b); })
-					  .filter(function(d) { return d.aValue; });
-	aTiles.sort(function(a,b) { return a.aValue - b.aValue; });
-	if (aTiles[0]) changed = true;
-	chooseTile(aTiles[0]);
-	if (changed) console.log("chooseSafestTile");
-	return changed;
 }
 
 setup();
